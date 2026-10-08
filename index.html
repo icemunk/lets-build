@@ -1,0 +1,952 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Let's Build Something</title>
+<meta name="description" content="A co-op game for 2 to 4 players: a free year of Claude, local businesses, and beer money.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🕹️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a18;
+    --panel: #12122a;
+    --panel-2: #1a1a3a;
+    --ink: #e9e6ff;
+    --dim: #a7a3cf;
+    --pink: #ff3ea5;
+    --cyan: #2de2e6;
+    --yellow: #ffd319;
+    --green: #39ff88;
+    --orange: #ff8c1a;
+    --line: #2b2b5a;
+    --pixel: "Press Start 2P", ui-monospace, monospace;
+    --mono: "VT323", ui-monospace, "Cascadia Mono", Consolas, monospace;
+    --max: 1080px;
+    --hud-h: 52px;
+    --pad-h: 76px;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; background: var(--bg); }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1px 1px at 12% 18%, #fff8 50%, transparent 51%),
+      radial-gradient(1px 1px at 72% 9%, #fff6 50%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 38% 42%, #fff5 50%, transparent 51%),
+      radial-gradient(1px 1px at 88% 61%, #fff6 50%, transparent 51%),
+      radial-gradient(1px 1px at 22% 77%, #fff4 50%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 58% 88%, #fff5 50%, transparent 51%),
+      var(--bg);
+    background-size: 600px 600px;
+    color: var(--ink);
+    font: 24px/1.3 var(--mono);
+  }
+  /* CRT scanlines + vignette */
+  body::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 50;
+    background:
+      repeating-linear-gradient(to bottom, rgba(0,0,0,.18) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,.45) 100%);
+  }
+  body.flash { animation: flash .6s steps(3) 1; }
+  @keyframes flash { 0%,100% { filter: none; } 50% { filter: invert(1) hue-rotate(180deg); } }
+
+  a { color: var(--cyan); }
+  :focus-visible { outline: 3px dashed var(--yellow); outline-offset: 4px; }
+  [tabindex="-1"]:focus { outline: none; }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 720px) { .wrap { padding: 0 28px; } }
+  .skip { position: absolute; left: -999px; }
+  .skip:focus { left: 16px; top: 60px; z-index: 99; background: var(--yellow); color: #000; padding: 8px; }
+  .px { font-family: var(--pixel); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* ---------- HUD ---------- */
+  .hud {
+    position: sticky; top: 0; z-index: 40;
+    background: rgba(10,10,24,.94); border-bottom: 3px solid var(--line);
+  }
+  .hud .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--hud-h); }
+  .hud .px { font-size: 10px; letter-spacing: .05em; }
+  .hud b { color: var(--yellow); font-weight: 400; display: inline-block; }
+  #hud-stage { color: var(--pink); }
+  #score.pop { animation: pop .25s steps(2); }
+  @keyframes pop { 50% { color: #fff; transform: scale(1.2); } }
+  .hud-btns { display: flex; gap: 8px; }
+  .hud button {
+    font: 10px var(--pixel); color: var(--ink); background: var(--panel-2);
+    border: 2px solid var(--line); padding: 8px 10px; cursor: pointer;
+  }
+  .hud button:hover { border-color: var(--cyan); color: var(--cyan); }
+  .no-js #menu-btn { display: none; }
+  @media (max-width: 560px) { .hide-sm { display: none; } }
+
+  /* ---------- Paged "game menu" mode (only when JS runs) ---------- */
+  .paged .screen { display: none; }
+  .paged .screen.active { display: block; animation: wipe .35s steps(7); }
+  .paged .title.active { display: flex; }
+  .paged section.screen { border-top: 0; min-height: calc(100vh - var(--hud-h) - var(--pad-h)); padding-bottom: calc(var(--pad-h) + 40px); }
+  .paged footer { display: none; }
+  .paged[data-screen="continue"] footer { display: block; margin-bottom: var(--pad-h); }
+  @keyframes wipe { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0 0); } }
+
+  /* Controller bar */
+  .pad {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; height: var(--pad-h);
+    background: rgba(10,10,24,.96); border-top: 3px solid var(--line);
+  }
+  .pad .wrap { height: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .pad[hidden], .paged[data-screen="top"] .pad { display: none; }
+  .pad-btn {
+    font: 11px/1 var(--pixel); cursor: pointer; padding: 14px 14px;
+    color: var(--cyan); background: var(--panel-2); border: 3px solid var(--cyan); box-shadow: 4px 4px 0 #000;
+  }
+  .pad-btn.go { color: #000; background: var(--yellow); border-color: #000; box-shadow: 4px 4px 0 var(--pink); }
+  .pad-btn:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 #000; }
+  .pad-btn:disabled { opacity: .35; cursor: default; }
+  .pad-mid { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+  .pips { display: flex; gap: 6px; }
+  .pips i { width: 12px; height: 12px; background: var(--line); display: block; }
+  .pips i.seen { background: var(--cyan); }
+  .pips i.now { background: var(--pink); box-shadow: 0 0 8px var(--pink); }
+  .hint { font: 8px var(--pixel); color: var(--dim); white-space: nowrap; }
+  @media (max-width: 640px) { .nx, .hint { display: none; } .pips i { width: 9px; height: 9px; } }
+
+  /* Stage-select menu */
+  dialog#menu {
+    background: var(--panel); color: var(--ink); border: 3px solid var(--cyan);
+    box-shadow: 8px 8px 0 #000; padding: 24px 20px; width: min(92vw, 480px);
+  }
+  dialog#menu::backdrop { background: rgba(5,5,15,.78); }
+  dialog#menu h2 { text-align: center; margin-bottom: 18px; }
+  #menu-list { list-style: none; margin: 0; padding: 0; }
+  #menu-list button {
+    width: 100%; display: flex; justify-content: space-between; gap: 10px; text-align: left;
+    font: 12px/1.6 var(--pixel); color: var(--ink); background: none; border: 0; padding: 10px 12px; cursor: pointer;
+  }
+  #menu-list button::before { content: "  "; white-space: pre; color: var(--yellow); }
+  #menu-list button:hover, #menu-list button:focus-visible { color: var(--yellow); background: var(--panel-2); outline: none; }
+  #menu-list button:hover::before, #menu-list button:focus-visible::before { content: "▶ "; }
+  #menu-list button[aria-current="step"] { color: var(--pink); }
+  #menu-list .tick { color: var(--green); }
+  #menu-list .label { flex: 1; }
+  .menu-hint { font: 8px/2 var(--pixel); color: var(--dim); text-align: center; margin: 16px 0 0; }
+
+  /* ---------- Title screen ---------- */
+  .title {
+    position: relative; overflow: hidden; text-align: center;
+    padding: 56px 0 0; min-height: calc(100vh - var(--hud-h)); display: flex; flex-direction: column;
+  }
+  .sun {
+    position: absolute; left: 50%; top: 38%; width: 340px; height: 340px; transform: translate(-50%, -50%);
+    border-radius: 50%; background: linear-gradient(var(--yellow) 10%, var(--orange) 45%, var(--pink) 85%);
+    -webkit-mask: repeating-linear-gradient(to bottom, #000 0 18px, transparent 18px 24px) bottom / 100% 55% no-repeat, linear-gradient(#000, #000) top / 100% 46% no-repeat;
+            mask: repeating-linear-gradient(to bottom, #000 0 18px, transparent 18px 24px) bottom / 100% 55% no-repeat, linear-gradient(#000, #000) top / 100% 46% no-repeat;
+    opacity: .8; filter: drop-shadow(0 0 40px rgba(255,62,165,.5));
+  }
+  .grid-floor {
+    position: absolute; left: -50%; right: -50%; bottom: 0; height: 40%;
+    background:
+      linear-gradient(to bottom, var(--bg), transparent 40%),
+      repeating-linear-gradient(to right, rgba(255,62,165,.55) 0 2px, transparent 2px 60px),
+      repeating-linear-gradient(to bottom, rgba(255,62,165,.55) 0 2px, transparent 2px 60px);
+    transform: perspective(260px) rotateX(62deg); transform-origin: bottom;
+    animation: drive 1.2s linear infinite;
+  }
+  @keyframes drive { to { background-position: 0 0, 0 0, 0 60px; } }
+  .title-inner { position: relative; z-index: 2; margin: auto 0; padding-bottom: 72px; }
+  .kicker { font: 11px/1.8 var(--pixel); color: var(--cyan); letter-spacing: .1em; margin: 0 0 22px; text-shadow: 0 2px 0 #000; }
+  h1 {
+    font-family: var(--pixel); font-weight: 400; margin: 0 auto 26px; line-height: 1.25;
+    font-size: clamp(26px, 7.2vw, 64px); color: #fff;
+    text-shadow: 3px 3px 0 var(--pink), 6px 6px 0 var(--cyan), 0 0 30px rgba(255,62,165,.6);
+    cursor: default; user-select: none;
+  }
+  .tagline { max-width: 34ch; margin: 0 auto 30px; color: var(--ink); font-size: 26px; text-shadow: 0 2px 0 #000, 0 0 12px #000; }
+  .tagline em { color: var(--yellow); font-style: normal; }
+  .blink { animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .title-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .how-to { font: 9px/2 var(--pixel); color: var(--cyan); margin: 26px auto 0; max-width: 46ch; text-shadow: 0 2px 0 #000; }
+  .copy { font: 9px/1.8 var(--pixel); color: var(--dim); margin-top: 14px; text-shadow: 0 2px 0 #000; }
+
+  .btn {
+    display: inline-block; font: 13px/1 var(--pixel); text-decoration: none; cursor: pointer;
+    color: #000; background: var(--yellow); border: 3px solid #000;
+    padding: 16px 20px; box-shadow: 5px 5px 0 var(--pink);
+    transition: transform .05s;
+  }
+  .btn:hover { background: #fff27a; }
+  .btn:active { transform: translate(4px, 4px); box-shadow: 1px 1px 0 var(--pink); }
+  .btn.alt { background: var(--panel-2); color: var(--cyan); border-color: var(--cyan); box-shadow: 5px 5px 0 #000; }
+  .btn.alt:hover { background: #24244c; }
+
+  /* ---------- Stages ---------- */
+  section { padding: 56px 0 72px; border-top: 3px dashed var(--line); }
+  .stage { font: 10px var(--pixel); color: var(--pink); letter-spacing: .12em; margin: 0 0 14px; }
+  h2 { font-family: var(--pixel); font-weight: 400; font-size: clamp(18px, 3.6vw, 30px); line-height: 1.4; margin: 0 0 18px; color: var(--yellow); text-shadow: 3px 3px 0 #000; }
+  .brief { max-width: 62ch; margin: 0 0 34px; padding: 12px 16px; border-left: 4px solid var(--cyan); background: rgba(45,226,230,.06); }
+  .brief::before { content: "BRIEFING"; display: block; font: 9px var(--pixel); color: var(--cyan); margin-bottom: 8px; letter-spacing: .1em; }
+  h3 { font: 12px/1.6 var(--pixel); font-weight: 400; margin: 0 0 10px; color: var(--cyan); }
+  .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .box { background: var(--panel); border: 3px solid var(--line); padding: 20px; box-shadow: 6px 6px 0 #000; }
+  .box p { margin: 0; color: var(--dim); }
+  .note { margin-top: 26px; padding: 14px 18px; border: 2px dashed var(--line); color: var(--dim); }
+  .note strong { color: var(--green); font-weight: 400; }
+
+  /* Player select */
+  .players { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .slot {
+    background: var(--panel); border: 3px solid var(--line); padding: 20px; box-shadow: 6px 6px 0 #000;
+    display: flex; flex-direction: column; gap: 10px; min-height: 250px;
+  }
+  .slot .who { font: 11px var(--pixel); color: var(--dim); }
+  .slot .avatar { font-size: 54px; line-height: 1; }
+  .slot .slot-state { font: 12px/1.6 var(--pixel); word-break: break-word; }
+  .slot .brings { margin: 0; color: var(--dim); }
+  .slot.p1 { border-color: var(--pink); }
+  .slot.p1 .slot-state { color: var(--pink); }
+  .slot.open { border-style: dashed; }
+  .slot.open .slot-state { color: var(--yellow); }
+  .slot.ready { border-style: solid; border-color: var(--green); }
+  .slot.ready .slot-state { color: var(--green); }
+  .join {
+    margin-top: auto; align-self: flex-start; font: 10px var(--pixel); cursor: pointer;
+    color: #000; background: var(--yellow); border: 3px solid #000; padding: 10px 12px; box-shadow: 3px 3px 0 var(--pink);
+  }
+  .slot.ready .join { background: var(--panel-2); color: var(--dim); border-color: var(--line); box-shadow: none; }
+  .entry { margin-top: auto; display: grid; gap: 8px; }
+  .entry[hidden], .join[hidden] { display: none; }
+  .entry label { font: 9px var(--pixel); color: var(--cyan); }
+  .entry .row { display: flex; gap: 8px; }
+  .entry input {
+    flex: 1; min-width: 0; font: 26px var(--mono); text-transform: uppercase; letter-spacing: .12em;
+    color: var(--yellow); background: #000; border: 3px solid var(--cyan); padding: 4px 8px; caret-color: var(--pink);
+  }
+  .entry button { font: 10px var(--pixel); cursor: pointer; color: #000; background: var(--green); border: 3px solid #000; padding: 0 12px; }
+  .stat { display: grid; grid-template-columns: 6.5em 1fr; align-items: center; gap: 8px; font-size: 20px; color: var(--dim); }
+  .bar { height: 12px; background: repeating-linear-gradient(to right, var(--c, var(--pink)) 0 10px, transparent 10px 13px); width: var(--w); }
+
+  /* Power-ups */
+  .power .icon { font-size: 40px; display: block; margin-bottom: 10px; }
+  .power .big { font: 16px/1.4 var(--pixel); color: #fff; margin: 0 0 10px; }
+
+  /* Inventory */
+  .inv { background: var(--panel); border: 3px solid var(--cyan); box-shadow: 6px 6px 0 #000; padding: 10px 0; }
+  .inv-head { font: 10px var(--pixel); color: var(--cyan); padding: 8px 20px 14px; border-bottom: 2px solid var(--line); display: flex; justify-content: space-between; }
+  .inv ul { list-style: none; margin: 0; padding: 0; }
+  .inv li { display: grid; grid-template-columns: 2em 13em 1fr; gap: 10px; padding: 9px 20px; align-items: baseline; }
+  .inv li:hover { background: var(--panel-2); }
+  .inv li:hover .name::before { content: "▶ "; color: var(--yellow); }
+  .inv .name { color: #fff; }
+  .inv .desc { color: var(--dim); }
+  .inv li.bonus { border-top: 2px dashed var(--line); margin-top: 6px; }
+  .inv li.bonus .name { color: var(--yellow); }
+  @media (max-width: 640px) {
+    .inv li { grid-template-columns: 2em 1fr; }
+    .inv .desc { grid-column: 2; }
+  }
+
+  /* World map */
+  .map { list-style: none; padding: 0; margin: 0; }
+  .map li { display: grid; grid-template-columns: 76px 1fr; gap: 18px; position: relative; padding-bottom: 26px; }
+  .map li:not(:last-child)::after {
+    content: ""; position: absolute; left: 36px; top: 64px; bottom: 0; width: 4px;
+    background: repeating-linear-gradient(to bottom, var(--yellow) 0 6px, transparent 6px 12px);
+  }
+  .node { width: 76px; height: 64px; display: grid; place-items: center; font: 12px var(--pixel); background: var(--panel-2); border: 3px solid var(--yellow); color: var(--yellow); box-shadow: 4px 4px 0 #000; }
+  .map li.boss .node { border-color: var(--pink); color: var(--pink); font-size: 28px; }
+  .map p { margin: 4px 0 0; color: var(--dim); }
+  .map h3 { margin-top: 8px; }
+
+  /* Quests */
+  .quest .meta { font-size: 20px; color: var(--dim); margin-top: 12px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .quest .meta span { color: var(--green); }
+
+  /* Endings */
+  .ending { text-align: center; }
+  .ending .icon { font-size: 46px; display: block; margin-bottom: 12px; }
+  .ending.best { border-color: var(--yellow); box-shadow: 6px 6px 0 var(--pink); }
+  .ending h3 { color: var(--yellow); }
+
+  /* Manual */
+  .manual details { background: var(--panel); border: 3px solid var(--line); margin-bottom: 12px; padding: 14px 18px; }
+  .manual details[open] { border-color: var(--cyan); }
+  .manual summary { cursor: pointer; font: 11px/1.7 var(--pixel); color: var(--ink); list-style: none; }
+  .manual summary::-webkit-details-marker { display: none; }
+  .manual summary::before { content: "► "; color: var(--yellow); }
+  .manual details[open] summary::before { content: "▼ "; }
+  .manual details p { color: var(--dim); margin: 12px 0 2px; }
+
+  /* Continue */
+  .continue { text-align: center; }
+  .continue h2 { font-size: clamp(26px, 6vw, 48px); color: #fff; text-shadow: 3px 3px 0 var(--pink), 6px 6px 0 var(--cyan); }
+  #count { font: clamp(64px, 16vw, 140px)/1 var(--pixel); color: var(--yellow); margin: 22px 0 26px; text-shadow: 5px 5px 0 var(--pink); min-height: 1em; }
+  #count.kidding { font-size: clamp(14px, 3vw, 22px); line-height: 1.6; padding: 30px 0; }
+  .continue .brief { margin: 0 auto 30px; text-align: left; }
+  #joined { font: 13px/1.8 var(--pixel); color: var(--green); margin-top: 28px; min-height: 1.8em; }
+  #roster { font: 10px/2.2 var(--pixel); color: var(--dim); margin: 0; padding: 0; list-style: none; }
+  #roster b { color: var(--yellow); font-weight: 400; }
+
+  footer { border-top: 3px solid var(--line); padding: 24px 0 32px; color: var(--dim); font-size: 20px; }
+  footer p { margin: 4px 0; }
+  footer .px { font-size: 9px; line-height: 2; }
+
+  /* Captain: tape buttons + dialogue box */
+  .take {
+    font: 10px var(--pixel); cursor: pointer; margin: -18px 0 30px;
+    color: var(--yellow); background: var(--panel-2); border: 3px solid var(--yellow); padding: 10px 12px; box-shadow: 4px 4px 0 #000;
+  }
+  .take:hover { background: #24244c; }
+  .take.playing { color: #000; background: var(--yellow); }
+  .continue .take { margin: -14px auto 30px; }
+  .captain {
+    position: fixed; left: 50%; bottom: calc(var(--pad-h) + 12px); transform: translateX(-50%); z-index: 55;
+    width: min(94vw, 760px); max-height: 42vh; overflow: auto;
+    display: grid; grid-template-columns: 58px 1fr auto; gap: 14px; align-items: start;
+    background: #05050d; border: 3px solid var(--yellow); box-shadow: 6px 6px 0 var(--pink); padding: 14px;
+  }
+  .captain[hidden] { display: none; }
+  .paged[data-screen="top"] .captain { bottom: 16px; }
+  .cap-face { width: 58px; height: 58px; display: grid; place-items: center; font-size: 34px; background: var(--panel-2); border: 3px solid var(--cyan); }
+  .cap-name { font: 10px var(--pixel); color: var(--yellow); margin-bottom: 8px; }
+  .cap-text { margin: 0; font-size: 23px; line-height: 1.25; color: #fff; min-height: 2.5em; }
+  .captain.typing .cap-text::after { content: "▌"; color: var(--pink); animation: blink .6s steps(1) infinite; }
+  .cap-ctrl { display: flex; flex-direction: column; gap: 6px; }
+  .cap-ctrl button { font: 12px var(--pixel); width: 34px; height: 34px; cursor: pointer; color: var(--ink); background: var(--panel-2); border: 2px solid var(--line); }
+  .cap-ctrl button:hover { border-color: var(--yellow); color: var(--yellow); }
+  @media (max-width: 560px) {
+    .captain { grid-template-columns: 1fr auto; gap: 10px; padding: 12px; }
+    .cap-face { display: none; }
+    .cap-text { font-size: 21px; }
+  }
+  #cap-toggle[aria-pressed="false"] { color: var(--dim); text-decoration: line-through; }
+
+  /* Toast */
+  #toast {
+    position: fixed; left: 50%; top: calc(var(--hud-h) + 14px); transform: translate(-50%, -400%); z-index: 60;
+    background: #000; color: var(--green); border: 3px solid var(--green); padding: 14px 18px;
+    font: 11px/1.8 var(--pixel); width: max-content; max-width: min(92vw, 560px); text-align: center;
+    transition: transform .2s steps(4);
+  }
+  #toast.show { transform: translate(-50%, 0); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .blink, .grid-floor, body.flash, #score.pop, .paged .screen.active { animation: none !important; }
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body class="no-js">
+<a class="skip" href="#main">Skip to content</a>
+
+<div class="hud" role="banner">
+  <div class="wrap">
+    <span class="px">1UP <b id="score">000000</b></span>
+    <span class="px hide-sm" id="hud-stage">TITLE SCREEN</span>
+    <span class="hud-btns">
+      <button id="menu-btn" type="button" aria-haspopup="dialog">☰ MENU</button>
+      <button id="cap-toggle" type="button" aria-pressed="true" aria-label="Captain talks on each stage" title="Captain talks on each stage">⚓ ON</button>
+      <button id="sound" type="button" aria-pressed="true" aria-label="Sound effects" title="Sound effects">🔊</button>
+    </span>
+  </div>
+</div>
+
+<main id="main">
+
+  <!-- TITLE SCREEN -->
+  <header class="title screen" id="top" data-name="TITLE SCREEN">
+    <div class="sun" aria-hidden="true"></div>
+    <div class="grid-floor" aria-hidden="true"></div>
+    <div class="title-inner wrap">
+      <p class="kicker">A CO-OP GAME FOR 2–4 PLAYERS · AGES 45+</p>
+      <h1 id="logo" tabindex="-1">LET'S BUILD<br>SOMETHING</h1>
+      <p class="tagline">A free year of Claude. Local businesses. <em>Beer money.</em> I'll set up the game, you grab a controller.</p>
+      <div class="title-actions">
+        <a class="btn" id="start" href="#players"><span class="blink">▶ PRESS START</span></a>
+        <button class="btn alt" id="voice" type="button" data-line="top" data-label="📼 MESSAGE FROM THE CAPTAIN">📼 MESSAGE FROM THE CAPTAIN</button>
+      </div>
+      <p class="how-to">8 SHORT STAGES. THE CAPTAIN TALKS YOU THROUGH EACH ONE (⚓ TURNS HIM OFF). USE NEXT / BACK, ← →, OR SWIPE. ☰ MENU JUMPS ANYWHERE.</p>
+      <p class="copy">© 2026 PLAYER ONE PRODUCTIONS · FREE PLAY 1 YEAR*<br>*IF ANTHROPIC APPROVES US. SEE THE MANUAL.</p>
+    </div>
+  </header>
+
+  <!-- 1. PLAYER SELECT -->
+  <section class="screen" id="players" data-name="SELECT PLAYER" aria-labelledby="players-h">
+    <div class="wrap">
+      <p class="stage">STAGE 1 OF 8</p>
+      <h2 id="players-h" tabindex="-1">SELECT YOUR PLAYER</h2>
+      <p class="brief">This is the crew. There are up to 5 seats, and Robert (P1) is already in. Hit PRESS START on an open slot and type your name to claim yours. For now the name only saves in your own browser, so tell Robert in person too. 1985 rules.</p>
+      <button class="take" type="button" data-line="players" data-label="📼 CAPTAIN'S TAKE">📼 CAPTAIN'S TAKE</button>
+      <div class="players">
+        <div class="slot p1">
+          <span class="who">P1</span>
+          <span class="avatar" aria-hidden="true">🧔</span>
+          <span class="slot-state">ROBERT</span>
+          <div class="stat">Paperwork <span class="bar" style="--w:95%"></span></div>
+          <div class="stat">Setup <span class="bar" style="--w:90%;--c:var(--cyan)"></span></div>
+          <div class="stat">Beer fund <span class="bar" style="--w:35%;--c:var(--yellow)"></span></div>
+        </div>
+        <div class="slot open" data-p="2">
+          <span class="who">P2</span>
+          <span class="avatar" aria-hidden="true">👤</span>
+          <span class="slot-state blink">OPEN SEAT</span>
+          <p class="brings">Brings: brains, a few hours, ideas.</p>
+          <button class="join" type="button">▶ PRESS START</button>
+          <form class="entry" hidden>
+            <label for="name-2">ENTER YOUR NAME</label>
+            <div class="row"><input id="name-2" maxlength="12" autocomplete="off" spellcheck="false" required><button type="submit">OK</button></div>
+          </form>
+        </div>
+        <div class="slot open" data-p="3">
+          <span class="who">P3</span>
+          <span class="avatar" aria-hidden="true">👤</span>
+          <span class="slot-state blink">OPEN SEAT</span>
+          <p class="brings">Brings: whatever he's good at. We'll find a use.</p>
+          <button class="join" type="button">▶ PRESS START</button>
+          <form class="entry" hidden>
+            <label for="name-3">ENTER YOUR NAME</label>
+            <div class="row"><input id="name-3" maxlength="12" autocomplete="off" spellcheck="false" required><button type="submit">OK</button></div>
+          </form>
+        </div>
+        <div class="slot open" data-p="4">
+          <span class="who">P4</span>
+          <span class="avatar" aria-hidden="true">👤</span>
+          <span class="slot-state blink">OPEN SEAT</span>
+          <p class="brings">Brings: the one idea nobody else thought of.</p>
+          <button class="join" type="button">▶ PRESS START</button>
+          <form class="entry" hidden>
+            <label for="name-4">ENTER YOUR NAME</label>
+            <div class="row"><input id="name-4" maxlength="12" autocomplete="off" spellcheck="false" required><button type="submit">OK</button></div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. POWER-UPS -->
+  <section class="screen" id="powerups" data-name="POWER-UPS" aria-labelledby="power-h">
+    <div class="wrap">
+      <p class="stage">STAGE 2 OF 8</p>
+      <h2 id="power-h" tabindex="-1">POWER-UPS ON THE TABLE</h2>
+      <p class="brief">This is what Anthropic's Claude Startups program gives a small team for free. Numbers are as published in October 2026, in USD. Bootstrapped teams are allowed, so no investors needed.</p>
+      <button class="take" type="button" data-line="powerups" data-label="📼 CAPTAIN'S TAKE">📼 CAPTAIN'S TAKE</button>
+      <div class="grid">
+        <div class="box power">
+          <span class="icon" aria-hidden="true">🍄</span>
+          <p class="big">5 EXTRA LIVES</p>
+          <p>Up to 5 Claude Team Premium seats, free for a year. That's about $6K worth at retail.</p>
+        </div>
+        <div class="box power">
+          <span class="icon" aria-hidden="true">🪙</span>
+          <p class="big">$1,000 COINS</p>
+          <p>API credit to build real products on. It expires 6 months after it's granted, so we spend it.</p>
+        </div>
+        <div class="box power">
+          <span class="icon" aria-hidden="true">⭐</span>
+          <p class="big">BONUS STAGE</p>
+          <p>Up to $45K in partner perks from companies like ClickHouse, ElevenLabs, Linear and Retool. We only grab what we'd use.</p>
+        </div>
+        <div class="box power">
+          <span class="icon" aria-hidden="true">🕹️</span>
+          <p class="big">CHEAT CODES</p>
+          <p>Office hours with Anthropic's applied AI engineers, plus higher API limits.</p>
+        </div>
+      </div>
+      <p class="note"><strong>No equity. No quotas. Nothing to pay back</strong> if we use it and walk away. We still have to apply and get approved, though.</p>
+    </div>
+  </section>
+
+  <!-- 3. INVENTORY -->
+  <section class="screen" id="inventory" data-name="INVENTORY" aria-labelledby="inv-h">
+    <div class="wrap">
+      <p class="stage">STAGE 3 OF 8</p>
+      <h2 id="inv-h" tabindex="-1">YOUR INVENTORY</h2>
+      <p class="brief">This is the gear each of us gets with a Premium seat. Every seat gets 5× the usage of a Standard seat, which is plenty of room to actually build.</p>
+      <button class="take" type="button" data-line="inventory" data-label="📼 CAPTAIN'S TAKE">📼 CAPTAIN'S TAKE</button>
+      <div class="inv">
+        <div class="inv-head"><span>ITEM</span><span>EQUIPPED ✓</span></div>
+        <ul>
+          <li><span aria-hidden="true">⌨️</span><span class="name">CLAUDE CODE</span><span class="desc">An agent that works right in the repo. It reads, writes, tests and opens PRs, from the terminal, VS Code, JetBrains or the desktop app.</span></li>
+          <li><span aria-hidden="true">🤖</span><span class="name">AUTOPILOT</span><span class="desc">Background and scheduled agents. Hand off a task and go get a coffee.</span></li>
+          <li><span aria-hidden="true">🔌</span><span class="name">CONNECTORS</span><span class="desc">Plugs into GitHub, Drive, Slack, our databases and our own tools.</span></li>
+          <li><span aria-hidden="true">🧩</span><span class="name">SKILLS</span><span class="desc">Save our playbooks once, and every seat follows them.</span></li>
+          <li><span aria-hidden="true">🌐</span><span class="name">BROWSER BOT</span><span class="desc">Drives a real browser and clicks through clunky portals that have no API.</span></li>
+          <li><span aria-hidden="true">📄</span><span class="name">ARTIFACTS</span><span class="desc">Puts a page or dashboard in front of a client in minutes.</span></li>
+          <li><span aria-hidden="true">🔍</span><span class="name">CODE REVIEW</span><span class="desc">A second set of eyes on every PR.</span></li>
+          <li><span aria-hidden="true">🧠</span><span class="name">API + AGENT SDK</span><span class="desc">Put the same brain inside the stuff we sell.</span></li>
+          <li class="bonus"><span aria-hidden="true">📼</span><span class="name">SECRET ITEM</span><span class="desc">The sea captain on the title screen? I made him with a voice studio running on my own PC. That's the kind of fun stuff you can whip up now.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. WORLD MAP -->
+  <section class="screen" id="map" data-name="WORLD MAP" aria-labelledby="map-h">
+    <div class="wrap">
+      <p class="stage">STAGE 4 OF 8</p>
+      <h2 id="map-h" tabindex="-1">WORLD MAP</h2>
+      <p class="brief">This is the route from "sounds fun" to our first real customer, step by step. Robert does the boring levels. You do the fun ones.</p>
+      <button class="take" type="button" data-line="map" data-label="📼 CAPTAIN'S TAKE">📼 CAPTAIN'S TAKE</button>
+      <ol class="map">
+        <li><span class="node">1-1</span><div><h3>SAY "I'M IN"</h3><p>Tell me in person, by text, or at lunch. No forms and no email.</p></div></li>
+        <li><span class="node">1-2</span><div><h3>GET YOUR GEAR</h3><p>You get a work email on our domain that forwards to your normal inbox. Claude Team needs one, and it takes two minutes.</p></div></li>
+        <li><span class="node">1-3</span><div><h3>THE APPLICATION</h3><p>As a group we could do this, but somebody has to do the paperwork. Robert's on it. Anthropic says a lot of decisions come back within minutes, and the slow ones take a couple of business days.</p></div></li>
+        <li><span class="node">1-4</span><div><h3>SPAWN POINT</h3><p>If we're approved, everyone gets a Premium seat and a shared GitHub that's ready to go.</p></div></li>
+        <li class="boss"><span class="node" aria-label="Boss">👾</span><div><h3>BOSS FIGHT</h3><p>We pick one real problem a local business has. We build it, ship it, and find out if it actually helped.</p></div></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 5. SIDE QUESTS -->
+  <section class="screen" id="quests" data-name="SIDE QUESTS" aria-labelledby="quests-h">
+    <div class="wrap">
+      <p class="stage">STAGE 5 OF 8</p>
+      <h2 id="quests-h" tabindex="-1">SIDE QUESTS</h2>
+      <p class="brief">These are the kinds of jobs we could take on for local businesses. Shops and trades still run on paper, spreadsheets and copy-paste, and we kill that stuff for a living. We'll pick one after talking to a few owners.</p>
+      <button class="take" type="button" data-line="quests" data-label="📼 CAPTAIN'S TAKE">📼 CAPTAIN'S TAKE</button>
+      <div class="grid">
+        <div class="box quest"><h3>📥 INTAKE + BOOKING</h3><p>Emails, forms and phone notes go into one organized queue, and follow-ups send themselves.</p><div class="meta">DIFFICULTY ★★☆ <span>LOOT: hours/week</span></div></div>
+        <div class="box quest"><h3>🧾 PAPERWORK BOT</h3><p>Reads invoices and quotes, files them, and flags anything weird.</p><div class="meta">DIFFICULTY ★★☆ <span>LOOT: fewer errors</span></div></div>
+        <div class="box quest"><h3>📊 SHEET → DASHBOARD</h3><p>Turns a messy spreadsheet into a weekly report the owner actually reads.</p><div class="meta">DIFFICULTY ★☆☆ <span>LOOT: quick win</span></div></div>
+        <div class="box quest"><h3>💬 FAQ ANSWERER</h3><p>Answers from the business's own info, and hands off to a person when it's not sure.</p><div class="meta">DIFFICULTY ★★★ <span>LOOT: fewer calls</span></div></div>
+        <div class="box quest"><h3>🔧 LITTLE TOOLS</h3><p>Inventory, scheduling and job tracking that are too small for the big guys to bother with.</p><div class="meta">DIFFICULTY ★★☆ <span>LOOT: repeat work</span></div></div>
+        <div class="box quest"><h3>🌍 WEBSITES</h3><p>Fast, simple sites that local shops can actually afford.</p><div class="meta">DIFFICULTY ★☆☆ <span>LOOT: easy sell</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. ENDINGS -->
+  <section class="screen" id="endings" data-name="ENDINGS" aria-labelledby="end-h">
+    <div class="wrap">
+      <p class="stage">STAGE 6 OF 8</p>
+      <h2 id="end-h" tabindex="-1">CHOOSE YOUR ENDING</h2>
+      <p class="brief">These are the three ways this can go. Every one of them is a win, because nobody puts in money and nobody quits their job.</p>
+      <button class="take" type="button" data-line="endings" data-label="📼 CAPTAIN'S TAKE">📼 CAPTAIN'S TAKE</button>
+      <div class="grid">
+        <div class="box ending">
+          <span class="icon" aria-hidden="true">💾</span>
+          <h3>GAME OVER?</h3>
+          <p>It makes $0. We still had a free year with the best tools out there, and we keep all the XP.</p>
+        </div>
+        <div class="box ending">
+          <span class="icon" aria-hidden="true">🍕🍺</span>
+          <h3>BEER MONEY ENDING</h3>
+          <p>Pizza and beers are on the project. Honestly, this is the ending we're going for.</p>
+        </div>
+        <div class="box ending best">
+          <span class="icon" aria-hidden="true">🏆</span>
+          <h3>SECRET ENDING</h3>
+          <p>It makes real money. We split it fair, put it in writing, and have some fun.</p>
+        </div>
+      </div>
+      <p class="note">Trillions of dollars went into this tech, and somebody's going to bring it to the businesses around here. <strong>It might as well be the guys who remember dial-up.</strong></p>
+    </div>
+  </section>
+
+  <!-- 7. MANUAL -->
+  <section class="screen manual" id="manual" data-name="THE MANUAL" aria-labelledby="manual-h">
+    <div class="wrap">
+      <p class="stage">STAGE 7 OF 8</p>
+      <h2 id="manual-h" tabindex="-1">READ THE MANUAL</h2>
+      <p class="brief">Yeah, I checked for the catch. Click any question for the straight answer.</p>
+      <button class="take" type="button" data-line="manual" data-label="📼 CAPTAIN'S TAKE">📼 CAPTAIN'S TAKE</button>
+      <details><summary>IS IT GUARANTEED?</summary><p>No. Anthropic reviews every application, and there are eligibility rules Robert will check before applying. If they say no, we can still build stuff on our own tools.</p></details>
+      <details><summary>WHAT HAPPENS AFTER YEAR ONE?</summary><p>I'll set reminders before it ends, and we decide together to keep it, shrink it, or drop it. No surprise charges, and nothing paid gets turned on without asking everybody.</p></details>
+      <details><summary>INFINITE LIVES?</summary><p>No. Each seat is one person, and every seat has usage limits. Premium's limits are 5× a Standard seat's, though. That's a lot.</p></details>
+      <details><summary>WHO OWNS THE LOOT?</summary><p>Before we take on a real paying customer, we put the split and the ownership in writing. Nobody gets left out.</p></details>
+      <details><summary>IS ANTHROPIC SPONSORING THIS?</summary><p>Nope. This is just us. Claude is the gear we'd use, and if something else fits a job better, we use that instead.</p></details>
+    </div>
+  </section>
+
+  <!-- 8. CONTINUE -->
+  <section class="screen continue" id="continue" data-name="CONTINUE?" aria-labelledby="cont-h">
+    <div class="wrap">
+      <p class="stage">STAGE 8 OF 8</p>
+      <h2 id="cont-h" tabindex="-1">CONTINUE?</h2>
+      <div id="count" aria-live="off">9</div>
+      <p class="brief">Inserting a coin means telling Robert "I'm in", in person, by text, whatever. Once 2 or 3 of us are in, the paperwork gets filed and the game starts. Loot not guaranteed. Fun mostly guaranteed.</p>
+      <button class="take" type="button" data-line="continue" data-label="📼 CAPTAIN'S TAKE">📼 CAPTAIN'S TAKE</button>
+      <button class="btn" id="yes" type="button">▶ YES</button>
+      <p id="joined" aria-live="polite"></p>
+      <ul id="roster" aria-label="Crew roster"></ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p class="px">NOT AFFILIATED WITH OR ENDORSED BY ANTHROPIC · PROGRAM DETAILS FROM CLAUDE.COM/PROGRAMS/STARTUPS (OCT 2026), SUBJECT TO CHANGE</p>
+    <p>No tracking, no cookies. Names you type stay in your own browser. Psst: ↑ ↑ ↓ ↓ ← → ← → B A</p>
+  </div>
+</footer>
+
+<nav class="pad" aria-label="Stage navigation" hidden>
+  <div class="wrap">
+    <button class="pad-btn" id="prev" type="button">◀ <span id="prev-lbl">BACK</span></button>
+    <div class="pad-mid">
+      <div class="pips" aria-hidden="true"></div>
+      <span class="hint">← → MOVE · ESC MENU</span>
+    </div>
+    <button class="pad-btn go" id="next" type="button"><span id="next-lbl">NEXT</span><span class="nx" id="next-name"></span> ▶</button>
+  </div>
+</nav>
+
+<dialog id="menu" aria-labelledby="menu-h">
+  <h2 id="menu-h">STAGE SELECT</h2>
+  <ol id="menu-list"></ol>
+  <p class="menu-hint">↑ ↓ TO PICK · ENTER TO GO · ESC TO CLOSE</p>
+</dialog>
+
+<div id="captain" class="captain" role="region" aria-label="The Captain says" hidden>
+  <div class="cap-face" aria-hidden="true">⚓</div>
+  <div>
+    <div class="cap-name">THE CAPTAIN SAYS:</div>
+    <p class="cap-text" id="cap-text" aria-live="polite"></p>
+  </div>
+  <div class="cap-ctrl">
+    <button id="cap-close" type="button" aria-label="Stop the captain and close">✕</button>
+    <button id="cap-replay" type="button" aria-label="Replay">↺</button>
+  </div>
+</div>
+<audio id="cap-audio" preload="none"></audio>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="assets/captain/lines.js"></script>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const $$ = s => [...document.querySelectorAll(s)];
+  document.body.classList.remove('no-js');
+
+  // --- 8-bit sound effects (WebAudio square waves, no files) ---
+  let ctx, soundOn = true;
+  function tones(freqs, dur = 0.08, type = 'square') {
+    if (!soundOn) return;
+    try {
+      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+      let t = ctx.currentTime;
+      for (const f of freqs) {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = type; o.frequency.value = f;
+        g.gain.setValueAtTime(0.05, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        o.connect(g).connect(ctx.destination);
+        o.start(t); o.stop(t + dur);
+        t += dur;
+      }
+    } catch (e) { /* no audio, no problem */ }
+  }
+  const sfx = {
+    blip:  () => tones([660], 0.05),
+    move:  () => tones([440, 880], 0.04),
+    coin:  () => tones([988, 1319], 0.09),
+    start: () => tones([523, 659, 784, 1047], 0.09),
+    power: () => tones([523, 659, 784, 1047, 1319, 1568], 0.06),
+  };
+  const soundBtn = $('#sound');
+  soundBtn.addEventListener('click', () => {
+    soundOn = !soundOn;
+    soundBtn.textContent = soundOn ? '🔊' : '🔇';
+    soundBtn.setAttribute('aria-pressed', String(soundOn));
+    sfx.blip();
+  });
+
+  // --- Score ---
+  let score = 0;
+  const scoreEl = $('#score');
+  function addScore(n) {
+    score += n;
+    scoreEl.textContent = String(score).padStart(6, '0');
+    scoreEl.classList.remove('pop'); void scoreEl.offsetWidth; scoreEl.classList.add('pop');
+  }
+
+  // --- Toast ---
+  let toastTimer;
+  function toast(msg) {
+    const t = $('#toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3600);
+  }
+
+  // --- Saved crew names (this browser only; nothing is sent anywhere) ---
+  const store = {
+    get() { try { return JSON.parse(localStorage.getItem('lbs-crew') || '{}'); } catch (e) { return {}; } },
+    set(v) { try { localStorage.setItem('lbs-crew', JSON.stringify(v)); } catch (e) { /* private mode: fine */ } },
+  };
+  let crew = store.get();
+
+  // =====================================================
+  // Game-menu navigation: one stage per screen
+  // =====================================================
+  document.body.classList.add('paged');
+  const screens = $$('.screen');
+  const last = screens.length - 1;
+  const visited = new Set();
+  const pad = $('.pad'), pips = $('.pips');
+  pad.hidden = false;
+  screens.slice(1).forEach(() => pips.appendChild(document.createElement('i')));
+  let cur = -1;
+
+  function indexOfHash() {
+    const id = decodeURIComponent(location.hash.slice(1));
+    const i = screens.findIndex(s => s.id === id);
+    return i < 0 ? 0 : i;
+  }
+
+  function go(i, opts = {}) {
+    i = Math.max(0, Math.min(last, i));
+    if (i === cur) return;
+    const fwd = i > cur;
+    screens.forEach((s, j) => s.classList.toggle('active', j === i));
+    cur = i;
+    const s = screens[i];
+    document.body.dataset.screen = s.id;
+    if (!opts.fromHistory) history.pushState(null, '', '#' + s.id);
+    window.scrollTo(0, 0);
+
+    $('#hud-stage').textContent = i === 0 ? 'TITLE SCREEN' : `STAGE ${i}/${last}`;
+    $('#prev').disabled = false;
+    $('#prev-lbl').textContent = i === 1 ? 'TITLE' : 'BACK';
+    if (i === last) {
+      $('#next-lbl').textContent = 'PLAY AGAIN'; $('#next-name').textContent = '';
+    } else {
+      $('#next-lbl').textContent = 'NEXT'; $('#next-name').textContent = ': ' + screens[i + 1].dataset.name;
+    }
+    [...pips.children].forEach((p, j) => {
+      p.className = (j + 1 === i) ? 'now' : (visited.has(j + 1) ? 'seen' : '');
+    });
+
+    if (i > 0 && !visited.has(i)) { visited.add(i); addScore(1000); }
+    if (!opts.silent) (fwd ? sfx.move : sfx.blip)();
+
+    if (s.id === 'continue') startCount(); else stopCount();
+    if (window.__captain) {
+      window.__captain.hush();
+      if (i > 0) setTimeout(() => { if (cur === i) window.__captain.say(s.id, true); }, 450);
+    }
+    const h = s.querySelector('[tabindex="-1"]');
+    if (h && !opts.silent) h.focus({ preventScroll: true });
+  }
+  const next = () => go(cur === last ? 0 : cur + 1);
+  const prev = () => go(cur - 1);
+
+  $('#next').addEventListener('click', next);
+  $('#prev').addEventListener('click', prev);
+  $('#start').addEventListener('click', e => { e.preventDefault(); sfx.start(); addScore(100); go(1, { silent: true }); $('#players-h').focus({ preventScroll: true }); });
+  window.addEventListener('popstate', () => go(indexOfHash(), { fromHistory: true }));
+
+  // Stage-select menu
+  const menu = $('#menu'), list = $('#menu-list');
+  function buildMenu() {
+    list.innerHTML = '';
+    screens.forEach((s, i) => {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = `<span class="label">${i === 0 ? '' : i + '. '}${s.dataset.name}</span><span class="tick">${visited.has(i) ? '✓' : ''}</span>`;
+      if (i === cur) b.setAttribute('aria-current', 'step');
+      b.addEventListener('click', () => { menu.close(); go(i); });
+      li.appendChild(b); list.appendChild(li);
+    });
+  }
+  function openMenu() {
+    if (!menu.showModal) return;
+    buildMenu(); menu.showModal(); sfx.blip();
+    (list.querySelector('[aria-current]') || list.querySelector('button')).focus();
+  }
+  $('#menu-btn').addEventListener('click', openMenu);
+  menu.addEventListener('click', e => { if (e.target === menu) menu.close(); });
+  menu.addEventListener('keydown', e => {
+    const btns = $$('#menu-list button');
+    const at = btns.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); btns[(at + 1) % btns.length].focus(); sfx.blip(); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); btns[(at - 1 + btns.length) % btns.length].focus(); sfx.blip(); }
+  });
+
+  // --- Konami code + keyboard navigation ---
+  const konami = ['arrowup','arrowup','arrowdown','arrowdown','arrowleft','arrowright','arrowleft','arrowright','b','a'];
+  let k = 0;
+  function cheat() {
+    sfx.power(); addScore(30000);
+    document.body.classList.add('flash');
+    setTimeout(() => document.body.classList.remove('flash'), 650);
+    toast('CHEAT ACTIVATED: +30 LIVES. (CLAUDE CODE WAS THE REAL CHEAT CODE.)');
+  }
+  document.addEventListener('keydown', e => {
+    const key = e.key.toLowerCase();
+    k = key === konami[k] ? k + 1 : (key === konami[0] ? 1 : 0);
+    if (k === konami.length) { k = 0; cheat(); return; }
+    if (menu.open || e.altKey || e.ctrlKey || e.metaKey) return;
+    const tgt = e.target instanceof Element ? e.target : document.body;
+    if (tgt.closest('input, textarea, select')) return;
+    const typingCode = k >= 5;   // mid-Konami: don't let ← → change stages
+    if (key === 'arrowright' && !typingCode) { e.preventDefault(); next(); }
+    else if (key === 'arrowleft' && !typingCode) { e.preventDefault(); prev(); }
+    else if (key === 'escape' || key === 'm') { e.preventDefault(); openMenu(); }
+    else if (key === 'enter' && cur === 0 && !tgt.closest('button, a, summary')) { e.preventDefault(); $('#start').click(); }
+  });
+
+  // Swipe left/right on phones
+  let tx = null, ty = null;
+  document.addEventListener('touchstart', e => {
+    if (e.target.closest('input, .pad, dialog')) { tx = null; return; }
+    tx = e.touches[0].clientX; ty = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', e => {
+    if (tx === null) return;
+    const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty;
+    tx = null;
+    if (Math.abs(dx) > 70 && Math.abs(dy) < 50) (dx < 0 ? next : prev)();
+  }, { passive: true });
+
+  // Logo: tap 5 times for the cheat on a phone
+  let taps = 0, tapTimer;
+  $('#logo').addEventListener('click', () => {
+    taps += 1; clearTimeout(tapTimer); tapTimer = setTimeout(() => { taps = 0; }, 1500);
+    if (taps >= 5) { taps = 0; cheat(); }
+  });
+
+  // =====================================================
+  // Player slots: type your name to claim a seat
+  // =====================================================
+  const faces = { 2: '😎', 3: '🤓', 4: '🧢' };
+  function setReady(slot, name) {
+    slot.classList.add('ready');
+    const st = slot.querySelector('.slot-state');
+    st.classList.remove('blink'); st.textContent = name + ' · READY!';
+    slot.querySelector('.avatar').textContent = faces[slot.dataset.p] || '😎';
+    slot.querySelector('.join').textContent = '✎ CHANGE NAME';
+  }
+  $$('.slot.open').forEach(slot => {
+    const p = slot.dataset.p;
+    const join = slot.querySelector('.join'), form = slot.querySelector('.entry'), input = form.querySelector('input');
+    if (crew[p]) setReady(slot, crew[p]);
+    join.addEventListener('click', () => {
+      join.hidden = true; form.hidden = false;
+      input.value = crew[p] || ''; input.focus(); sfx.blip();
+    });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { e.stopPropagation(); form.hidden = true; join.hidden = false; join.focus(); }
+    });
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      const name = input.value.replace(/[^\p{L}\p{N} .'-]/gu, '').trim().toUpperCase().slice(0, 12);
+      if (!name) { input.focus(); return; }
+      const isNew = !crew[p];
+      crew[p] = name; store.set(crew);
+      form.hidden = true; join.hidden = false;
+      setReady(slot, name);
+      sfx.coin(); if (isNew) addScore(500);
+      toast(`WELCOME ABOARD, ${name}! SAVED IN THIS BROWSER. TELL ROBERT IN PERSON TOO.`);
+    });
+  });
+
+  // =====================================================
+  // The Captain: one voice line + captions per stage
+  // =====================================================
+  const lines = window.CAPTAIN_LINES || {};
+  const capAudio = $('#cap-audio'), capBox = $('#captain'), capText = $('#cap-text'), capToggle = $('#cap-toggle');
+  let capOn = true, capKey = null, hideTimer = null, typing = 0, userActed = false;
+  ['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { userActed = true; }, { once: true, capture: true }));
+
+  function markButtons(active) {
+    $$('[data-line]').forEach(b => {
+      const on = b.dataset.line === active;
+      b.classList.toggle('playing', on);
+      b.textContent = on ? '■ STOP THE CAPTAIN' : b.dataset.label;
+    });
+  }
+  function typeAlong() {
+    const t = lines[capKey] || '';
+    const d = capAudio.duration;
+    if (!capAudio.paused && d) {
+      capText.textContent = t.slice(0, Math.ceil(t.length * Math.min(1, capAudio.currentTime / (d * 0.92))));
+      typing = requestAnimationFrame(typeAlong);
+    }
+  }
+  function say(key, auto) {
+    if (!lines[key]) return;
+    if (auto && (!capOn || !userActed)) return;
+    clearTimeout(hideTimer); cancelAnimationFrame(typing);
+    capKey = key; capText.textContent = ''; capBox.hidden = false; capBox.classList.add('typing');
+    capAudio.src = `assets/captain/${key}.mp3`;
+    capAudio.play().then(() => { markButtons(key); typeAlong(); }).catch(() => {
+      capText.textContent = lines[key]; capBox.classList.remove('typing');
+    });
+  }
+  function hush() {
+    capAudio.pause(); cancelAnimationFrame(typing); clearTimeout(hideTimer);
+    capBox.hidden = true; capBox.classList.remove('typing'); markButtons(null);
+  }
+  capAudio.addEventListener('ended', () => {
+    cancelAnimationFrame(typing);
+    capText.textContent = lines[capKey] || ''; capBox.classList.remove('typing'); markButtons(null);
+    hideTimer = setTimeout(() => { capBox.hidden = true; }, 7000);
+  });
+  $$('[data-line]').forEach(b => b.addEventListener('click', () => {
+    if (!capAudio.paused && capKey === b.dataset.line) hush(); else say(b.dataset.line);
+  }));
+  window.__captain = { say, hush };
+  $('#cap-close').addEventListener('click', hush);
+  $('#cap-replay').addEventListener('click', () => { if (capKey) say(capKey); });
+  capToggle.addEventListener('click', () => {
+    capOn = !capOn;
+    capToggle.textContent = capOn ? '⚓ ON' : '⚓ OFF';
+    capToggle.setAttribute('aria-pressed', String(capOn));
+    if (!capOn) hush();
+    toast(capOn ? 'THE CAPTAIN WILL TALK YOU THROUGH EACH STAGE.' : "CAPTAIN MUTED. HIT CAPTAIN'S TAKE ANY TIME.");
+  });
+
+  // =====================================================
+  // CONTINUE? countdown (it's a joke; there's no deadline)
+  // =====================================================
+  const countEl = $('#count');
+  let n = 9, timer = null, joined = false, resetTimer = null;
+  function tick() {
+    if (!capAudio.paused) return;   // let the captain finish first
+    n -= 1;
+    if (n >= 0) { countEl.textContent = n; sfx.blip(); return; }
+    stopCount();
+    countEl.classList.add('kidding'); countEl.textContent = 'JUST KIDDING. NO TIME LIMIT. 🍺';
+    resetTimer = setTimeout(() => { countEl.classList.remove('kidding'); n = 9; countEl.textContent = n; startCount(); }, 3500);
+  }
+  function startCount() { if (!timer && !joined && !countEl.classList.contains('kidding')) timer = setInterval(tick, 1000); }
+  function stopCount() { clearInterval(timer); timer = null; clearTimeout(resetTimer); }
+  function renderRoster() {
+    const rows = [['P1', 'ROBERT'], ...Object.keys(crew).sort().map(p => ['P' + p, crew[p]])];
+    $('#roster').innerHTML = '';
+    if (rows.length < 2) return;
+    rows.forEach(([p, nm]) => {
+      const li = document.createElement('li');
+      li.innerHTML = `${p} <b></b>`; li.querySelector('b').textContent = nm;
+      $('#roster').appendChild(li);
+    });
+  }
+  $('#yes').addEventListener('click', () => {
+    if (joined) return;
+    joined = true; stopCount();
+    countEl.classList.remove('kidding'); countEl.classList.add('kidding'); countEl.textContent = '★ CONTINUE ★';
+    sfx.power(); addScore(10000);
+    const names = Object.values(crew);
+    $('#joined').textContent = names.length
+      ? `NICE, ${names[0]}. NOW GO TELL ROBERT. FIRST ROUND IS ON HIM. 🍺`
+      : 'NICE. NOW GO TELL ROBERT. FIRST ROUND IS ON HIM. 🍺';
+    renderRoster();
+  });
+
+  $$('.manual details').forEach(d => d.addEventListener('toggle', () => { if (d.open) sfx.blip(); }));
+
+  // Start on whatever stage the URL points at (title by default)
+  history.replaceState(null, '', location.hash || '#top');
+  go(indexOfHash(), { fromHistory: true, silent: true });
+})();
+</script>
+</body>
+</html>
