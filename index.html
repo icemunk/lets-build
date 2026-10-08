@@ -312,6 +312,9 @@
     background: #05050d; border: 3px solid var(--yellow); box-shadow: 6px 6px 0 var(--pink); padding: 14px;
   }
   .captain[hidden] { display: none; }
+  .paged.cap-open section.screen { padding-bottom: calc(var(--pad-h) + 42vh); }
+  .cap-tap { margin-top: 10px; font: 10px var(--pixel); cursor: pointer; color: #000; background: var(--yellow); border: 3px solid #000; padding: 10px 12px; box-shadow: 3px 3px 0 var(--pink); }
+  .cap-tap[hidden] { display: none; }
   .paged[data-screen="top"] .captain { bottom: 16px; }
   .cap-face { width: 58px; height: 58px; display: grid; place-items: center; font-size: 34px; background: var(--panel-2); border: 3px solid var(--cyan); }
   .cap-name { font: 10px var(--pixel); color: var(--yellow); margin-bottom: 8px; }
@@ -608,6 +611,7 @@
   <div>
     <div class="cap-name">THE CAPTAIN SAYS:</div>
     <p class="cap-text" id="cap-text" aria-live="polite"></p>
+    <button class="cap-tap" id="cap-tap" type="button" hidden>▶ TAP TO HEAR THE CAPTAIN</button>
   </div>
   <div class="cap-ctrl">
     <button id="cap-close" type="button" aria-label="Stop the captain and close">✕</button>
@@ -729,7 +733,7 @@
     if (s.id === 'continue') startCount(); else stopCount();
     if (window.__captain) {
       window.__captain.hush();
-      if (i > 0) setTimeout(() => { if (cur === i) window.__captain.say(s.id, true); }, 450);
+      if (i > 0) window.__captain.say(s.id, true);
     }
     const h = s.querySelector('[tabindex="-1"]');
     if (h && !opts.silent) h.focus({ preventScroll: true });
@@ -852,7 +856,7 @@
   // The Captain: one voice line + captions per stage
   // =====================================================
   const lines = window.CAPTAIN_LINES || {};
-  const capAudio = $('#cap-audio'), capBox = $('#captain'), capText = $('#cap-text'), capToggle = $('#cap-toggle');
+  const capAudio = $('#cap-audio'), capBox = $('#captain'), capText = $('#cap-text'), capToggle = $('#cap-toggle'), capTap = $('#cap-tap');
   let capOn = true, capKey = null, hideTimer = null, typing = 0, userActed = false;
   ['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { userActed = true; }, { once: true, capture: true }));
 
@@ -875,26 +879,41 @@
     if (!lines[key]) return;
     if (auto && (!capOn || !userActed)) return;
     clearTimeout(hideTimer); cancelAnimationFrame(typing);
-    capKey = key; capText.textContent = ''; capBox.hidden = false; capBox.classList.add('typing');
+    capKey = key; capText.textContent = ''; showBox(true); capBox.classList.add('typing'); capTap.hidden = true;
     capAudio.src = `assets/captain/${key}.mp3`;
-    capAudio.play().then(() => { markButtons(key); typeAlong(); }).catch(() => {
-      capText.textContent = lines[key]; capBox.classList.remove('typing');
+    markButtons(key);
+    capAudio.play().then(typeAlong).catch(err => {
+      if (capKey !== key || err.name === 'AbortError') return;   // skipped ahead; the next line takes over
+      // Browser blocked the sound: show his words and a big button to hear him.
+      capText.textContent = lines[key]; capBox.classList.remove('typing'); markButtons(null);
+      capTap.hidden = false;
     });
+  }
+  function showBox(on) {
+    capBox.hidden = !on;
+    document.body.classList.toggle('cap-open', on);
   }
   function hush() {
     capAudio.pause(); cancelAnimationFrame(typing); clearTimeout(hideTimer);
-    capBox.hidden = true; capBox.classList.remove('typing'); markButtons(null);
+    showBox(false); capBox.classList.remove('typing'); markButtons(null);
   }
   capAudio.addEventListener('ended', () => {
     cancelAnimationFrame(typing);
     capText.textContent = lines[capKey] || ''; capBox.classList.remove('typing'); markButtons(null);
-    hideTimer = setTimeout(() => { capBox.hidden = true; }, 7000);
+    hideTimer = setTimeout(() => showBox(false), 4000);
+  });
+  capAudio.addEventListener('error', () => {
+    if (!capKey || capBox.hidden) return;
+    cancelAnimationFrame(typing);
+    capText.textContent = lines[capKey] || ''; capBox.classList.remove('typing'); markButtons(null);
+    hideTimer = setTimeout(() => showBox(false), 9000);
   });
   $$('[data-line]').forEach(b => b.addEventListener('click', () => {
     if (!capAudio.paused && capKey === b.dataset.line) hush(); else say(b.dataset.line);
   }));
   window.__captain = { say, hush };
   $('#cap-close').addEventListener('click', hush);
+  capTap.addEventListener('click', () => { if (capKey) say(capKey); });
   $('#cap-replay').addEventListener('click', () => { if (capKey) say(capKey); });
   capToggle.addEventListener('click', () => {
     capOn = !capOn;
